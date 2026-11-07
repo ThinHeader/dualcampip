@@ -17,6 +17,7 @@ import java.nio.FloatBuffer
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 
 /**
@@ -56,7 +57,8 @@ class GlCompositor {
     @Volatile var recording: Boolean = false
     @Volatile var onBothFrames: (() -> Unit)? = null
 
-    private var bothNotified = false
+    private val frameGate = AtomicInteger(0)
+    private var notifiedGate = -1
     private var loggedFrame = false
     private var lastEncoderPtsNs = 0L
     private val mainHandler = Handler(android.os.Looper.getMainLooper())
@@ -129,7 +131,7 @@ class GlCompositor {
     }
 
     fun resetFrameGate() {
-        bothNotified = false
+        frameGate.incrementAndGet()
         post {
             rear.hasFrame = false
             front.hasFrame = false
@@ -195,10 +197,15 @@ class GlCompositor {
         egl.makeCurrent(anchor)
         rear.consume()
         front.consume()
-        if (rear.hasFrame && front.hasFrame && !bothNotified) {
-            bothNotified = true
+        val gate = frameGate.get()
+        if (rear.hasFrame && front.hasFrame && notifiedGate != gate) {
+            notifiedGate = gate
             val callback = onBothFrames
-            if (callback != null) mainHandler.post(callback)
+            if (callback != null) {
+                mainHandler.post {
+                    if (frameGate.get() == gate) callback()
+                }
+            }
         }
         val preview = previewEgl
         if (preview != null && previewWidth > 0 && previewHeight > 0) {

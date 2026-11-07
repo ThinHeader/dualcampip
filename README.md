@@ -48,7 +48,7 @@
 
 ## 架构
 
-- `camera/DualCameraSession`：运行时探测并发能力。先用 CameraX `ConcurrentCamera` 各绑一路 `Preview`；绑定失败或设备只在 Camera2 里报告了前后摄组合时，改用 Camera2 同时 `openCamera`。两种都不行就只开后置预览，并禁用录制。
+- `camera/DualCameraSession`：运行时探测并发能力。先用 CameraX `ConcurrentCamera` 各绑一路 `Preview`（全屏后置、画中画前置）。绑定后若打开的两颗相机不是一后一前，或绑定失败，再在 Camera2 确认前后组合后同时 `openCamera`。两种都不能证明是前后摄时，只开后置预览，并禁用录制。
 - `render/GlCompositor`：同一套着色器把后置画满、前置画成圆角画中画。预览 Surface 和编码器 Surface 共用几何计算（`render/PipGeometry`、`render/FrameTransform`）。
 - `encode/CompositeRecorder`：MediaCodec 把合成画面编成 H.264，麦克风编成 AAC，再复用进一个 MP4。
 - `gallery/GallerySaver`：以 `IS_PENDING` 写入 MediaStore，成功后再发布。失败则删除这条未完成记录。
