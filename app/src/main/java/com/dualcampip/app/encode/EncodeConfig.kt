@@ -13,6 +13,9 @@ object EncodeConfig {
     const val AUDIO_SAMPLE_RATE = 44_100
     const val AUDIO_BIT_RATE = 96_000
     const val AUDIO_CHANNEL_COUNT = 1
+    const val AUDIO_BYTES_PER_SAMPLE = 2
+    /** AAC-LC emits one access unit of this many PCM samples per output buffer. */
+    const val AAC_FRAME_SAMPLES = 1024
 
     const val ASPECT_W_OVER_H = WIDTH.toFloat() / HEIGHT.toFloat()
 

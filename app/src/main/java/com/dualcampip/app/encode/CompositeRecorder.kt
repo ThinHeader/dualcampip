@@ -33,7 +33,6 @@ class CompositeRecorder(context: Context) {
     private var audioThread: Thread? = null
     private val audioRunning = AtomicBoolean(false)
     private var displayName: String = ""
-    private var recordStartNs: Long = 0L
     @Volatile private var failure: String? = null
     private var released = false
 
@@ -55,7 +54,6 @@ class CompositeRecorder(context: Context) {
         val mic = createMicrophone()
         audioRecord = mic
 
-        recordStartNs = System.nanoTime()
         video.codec.start()
         audio.start()
         mic.startRecording()
@@ -128,45 +126,84 @@ class CompositeRecorder(context: Context) {
 
     private fun pumpAudio(mic: AudioRecord, codec: MediaCodec, sampleMuxer: SampleMuxer) {
         android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO)
-        val buffer = ByteArray(4096)
-        var samples = 0L
-        val audioStartNs = System.nanoTime()
-        while (audioRunning.get()) {
+        val buffer = ByteArray(EncodeConfig.AAC_FRAME_SAMPLES * EncodeConfig.AUDIO_BYTES_PER_SAMPLE)
+        var samplesQueued = 0L
+        while (audioRunning.get() && failure == null) {
             val read = mic.read(buffer, 0, buffer.size)
-            if (read > 0) {
-                queueAudio(codec, buffer, read, ptsUs(audioStartNs, samples))
-                samples += read / 2
-            } else if (read < 0) {
+            if (read == 0) continue
+            if (read < 0) {
                 failure = failure ?: "microphone read failed"
                 break
             }
-            drainAudio(codec, sampleMuxer, waitEos = false)
+            val queued = queuePcm(codec, sampleMuxer, buffer, read, samplesQueued)
+            if (queued < 0) break
+            samplesQueued += queued
         }
-        queueAudioEos(codec, ptsUs(audioStartNs, samples))
+        val endPtsUs = samplesQueued * 1_000_000L / EncodeConfig.AUDIO_SAMPLE_RATE
+        queueAudioEos(codec, sampleMuxer, endPtsUs)
         drainAudio(codec, sampleMuxer, waitEos = true)
         runCatching { mic.stop() }
     }
 
-    private fun ptsUs(audioStartNs: Long, samplesWritten: Long): Long {
-        val offsetUs = (audioStartNs - recordStartNs) / 1_000L
-        val sampleUs = samplesWritten * 1_000_000L / EncodeConfig.AUDIO_SAMPLE_RATE
-        return (offsetUs + sampleUs).coerceAtLeast(0L)
-    }
-
-    private fun queueAudio(codec: MediaCodec, data: ByteArray, size: Int, ptsUs: Long) {
-        val index = codec.dequeueInputBuffer(10_000)
-        if (index < 0) return
-        val input = codec.getInputBuffer(index) ?: return
-        input.clear()
-        input.put(data, 0, size)
-        codec.queueInputBuffer(index, 0, size, ptsUs, 0)
-    }
-
-    private fun queueAudioEos(codec: MediaCodec, ptsUs: Long) {
-        val index = codec.dequeueInputBuffer(20_000)
-        if (index >= 0) {
-            codec.queueInputBuffer(index, 0, 0, ptsUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+    /**
+     * Queues every captured sample. A failed [MediaCodec.dequeueInputBuffer] used to
+     * discard the mic read, which cut words out of the file.
+     * Returns the number of samples queued, or -1 if the encoder stalls.
+     */
+    private fun queuePcm(
+        codec: MediaCodec,
+        sampleMuxer: SampleMuxer,
+        data: ByteArray,
+        size: Int,
+        samplesAlreadyQueued: Long,
+    ): Long {
+        var offset = 0
+        var queuedSamples = 0L
+        var stalled = 0
+        while (offset < size) {
+            drainAudio(codec, sampleMuxer, waitEos = false)
+            val index = codec.dequeueInputBuffer(50_000)
+            if (index < 0) {
+                stalled += 1
+                if (stalled >= 40) {
+                    failure = failure ?: "audio encoder stalled"
+                    return -1
+                }
+                continue
+            }
+            stalled = 0
+            val input = codec.getInputBuffer(index)
+            if (input == null) {
+                codec.queueInputBuffer(index, 0, 0, 0, 0)
+                continue
+            }
+            input.clear()
+            var chunk = minOf(size - offset, input.remaining())
+            chunk -= chunk % EncodeConfig.AUDIO_BYTES_PER_SAMPLE
+            if (chunk <= 0) {
+                codec.queueInputBuffer(index, 0, 0, 0, 0)
+                continue
+            }
+            input.put(data, offset, chunk)
+            val sampleCount = chunk / EncodeConfig.AUDIO_BYTES_PER_SAMPLE
+            val ptsUs = (samplesAlreadyQueued + queuedSamples) * 1_000_000L / EncodeConfig.AUDIO_SAMPLE_RATE
+            codec.queueInputBuffer(index, 0, chunk, ptsUs, 0)
+            queuedSamples += sampleCount
+            offset += chunk
         }
+        return queuedSamples
+    }
+
+    private fun queueAudioEos(codec: MediaCodec, sampleMuxer: SampleMuxer, ptsUs: Long) {
+        repeat(40) {
+            drainAudio(codec, sampleMuxer, waitEos = false)
+            val index = codec.dequeueInputBuffer(50_000)
+            if (index >= 0) {
+                codec.queueInputBuffer(index, 0, 0, ptsUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                return
+            }
+        }
+        Log.w(TAG, "audio EOS was not queued")
     }
 
     private fun drainAudio(codec: MediaCodec, sampleMuxer: SampleMuxer, waitEos: Boolean) {
@@ -174,7 +211,13 @@ class CompositeRecorder(context: Context) {
         val deadline = System.nanoTime() + if (waitEos) 2_000_000_000L else 0L
         while (true) {
             val timeout = if (waitEos) 10_000L else 0L
-            val index = codec.dequeueOutputBuffer(info, timeout)
+            val index = try {
+                codec.dequeueOutputBuffer(info, timeout)
+            } catch (thrown: IllegalStateException) {
+                Log.e(TAG, "audio drain stopped", thrown)
+                failure = failure ?: "audio encoder stopped"
+                return
+            }
             when {
                 index == MediaCodec.INFO_TRY_AGAIN_LATER -> {
                     if (!waitEos || System.nanoTime() > deadline) return
@@ -187,7 +230,7 @@ class CompositeRecorder(context: Context) {
                     if (buffer != null) sampleMuxer.write(TrackKind.AUDIO, buffer, info)
                     val eos = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
                     codec.releaseOutputBuffer(index, false)
-                    if (eos || !waitEos) return
+                    if (eos) return
                 }
                 else -> if (!waitEos) return
             }
@@ -222,6 +265,7 @@ class CompositeRecorder(context: Context) {
         ).apply {
             setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
             setInteger(MediaFormat.KEY_BIT_RATE, EncodeConfig.AUDIO_BIT_RATE)
+            setInteger(MediaFormat.KEY_PCM_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
             setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 16 * 1024)
         }
         val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
@@ -237,12 +281,13 @@ class CompositeRecorder(context: Context) {
             AudioFormat.ENCODING_PCM_16BIT,
         )
         if (min <= 0) throw IllegalStateException("microphone buffer unavailable")
+        val frameBytes = EncodeConfig.AAC_FRAME_SAMPLES * EncodeConfig.AUDIO_BYTES_PER_SAMPLE
         val record = AudioRecord(
             MediaRecorder.AudioSource.MIC,
             EncodeConfig.AUDIO_SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
-            min * 2,
+            maxOf(min * 2, frameBytes * 8),
         )
         if (record.state != AudioRecord.STATE_INITIALIZED) {
             record.release()

@@ -28,7 +28,10 @@ internal class SampleMuxer(
     private var released = false
     private val pending = ArrayList<PendingSample>(64)
     private val videoTimestamps = TrackTimestamps()
-    private val audioTimestamps = TrackTimestamps()
+    private val audioClock = AudioFrameClock(
+        sampleRate = EncodeConfig.AUDIO_SAMPLE_RATE,
+        samplesPerFrame = EncodeConfig.AAC_FRAME_SAMPLES,
+    )
     private var loggedVideoBase = false
     private var loggedAudioBase = false
 
@@ -89,14 +92,22 @@ internal class SampleMuxer(
     private fun writeLocked(sample: PendingSample) {
         val track = if (sample.kind == TrackKind.VIDEO) videoTrack else audioTrack
         if (track < 0) return
-        val timestamps = if (sample.kind == TrackKind.VIDEO) videoTimestamps else audioTimestamps
-        val ptsUs = timestamps.rebase(sample.ptsUs)
-        if (sample.kind == TrackKind.VIDEO && !loggedVideoBase) {
-            loggedVideoBase = true
-            Log.i(TAG, "video pts base ${sample.ptsUs} us")
-        } else if (sample.kind == TrackKind.AUDIO && !loggedAudioBase) {
-            loggedAudioBase = true
-            Log.i(TAG, "audio pts base ${sample.ptsUs} us")
+        val ptsUs = when (sample.kind) {
+            TrackKind.VIDEO -> {
+                if (!loggedVideoBase) {
+                    loggedVideoBase = true
+                    Log.i(TAG, "video pts base ${sample.ptsUs} us")
+                }
+                videoTimestamps.rebase(sample.ptsUs)
+            }
+            TrackKind.AUDIO -> {
+                val pts = audioClock.nextPtsUs()
+                if (!loggedAudioBase) {
+                    loggedAudioBase = true
+                    Log.i(TAG, "audio frame pts ${pts} us, encoder had ${sample.ptsUs} us")
+                }
+                pts
+            }
         }
         val buffer = ByteBuffer.wrap(sample.bytes)
         val info = MediaCodec.BufferInfo()

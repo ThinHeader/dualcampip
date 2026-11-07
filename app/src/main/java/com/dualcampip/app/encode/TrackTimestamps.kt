@@ -3,10 +3,10 @@ package com.dualcampip.app.encode
 /**
  * Makes one MP4 track start at zero.
  *
- * Encoders sometimes emit absolute monotonic timestamps (nanoseconds since boot,
- * divided into microseconds). MediaMuxer then stores that value, and gallery
- * apps report it as the duration. Subtracting the first sample's timestamp
- * leaves the real length.
+ * Video encoders sometimes emit absolute monotonic timestamps. Subtracting the
+ * first sample leaves the real length. Audio does not use this: several AAC
+ * frames often share one timestamp, and forcing those ties 1 µs apart makes
+ * speech play too fast.
  */
 internal class TrackTimestamps {
     private var baseUs = Long.MIN_VALUE
