@@ -3,6 +3,7 @@ package com.dualcampip.app.encode
 import android.media.MediaCodec
 import android.media.MediaFormat
 import android.media.MediaMuxer
+import android.util.Log
 import java.nio.ByteBuffer
 
 internal enum class TrackKind {
@@ -26,6 +27,10 @@ internal class SampleMuxer(
     private var started = false
     private var released = false
     private val pending = ArrayList<PendingSample>(64)
+    private val videoTimestamps = TrackTimestamps()
+    private val audioTimestamps = TrackTimestamps()
+    private var loggedVideoBase = false
+    private var loggedAudioBase = false
 
     var videoSamplesWritten: Int = 0
         private set
@@ -84,9 +89,18 @@ internal class SampleMuxer(
     private fun writeLocked(sample: PendingSample) {
         val track = if (sample.kind == TrackKind.VIDEO) videoTrack else audioTrack
         if (track < 0) return
+        val timestamps = if (sample.kind == TrackKind.VIDEO) videoTimestamps else audioTimestamps
+        val ptsUs = timestamps.rebase(sample.ptsUs)
+        if (sample.kind == TrackKind.VIDEO && !loggedVideoBase) {
+            loggedVideoBase = true
+            Log.i(TAG, "video pts base ${sample.ptsUs} us")
+        } else if (sample.kind == TrackKind.AUDIO && !loggedAudioBase) {
+            loggedAudioBase = true
+            Log.i(TAG, "audio pts base ${sample.ptsUs} us")
+        }
         val buffer = ByteBuffer.wrap(sample.bytes)
         val info = MediaCodec.BufferInfo()
-        info.set(0, sample.bytes.size, sample.ptsUs.coerceAtLeast(0L), sample.flags)
+        info.set(0, sample.bytes.size, ptsUs, sample.flags)
         muxer.writeSampleData(track, buffer, info)
         if (sample.kind == TrackKind.VIDEO) videoSamplesWritten += 1
     }
@@ -99,6 +113,7 @@ internal class SampleMuxer(
     )
 
     private companion object {
+        const val TAG = "DualCamPiP"
         const val MAX_PENDING = 180
     }
 }

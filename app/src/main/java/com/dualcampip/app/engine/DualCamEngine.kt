@@ -149,7 +149,7 @@ class DualCamEngine(
                 val rec = CompositeRecorder(app)
                 try {
                     val encoderSurface = withContext(Dispatchers.IO) { rec.start() }
-                    compositor.beginRecording(encoderSurface, rec.clockBaseNs)
+                    compositor.beginRecording(encoderSurface)
                     recorder = rec
                     recordingActive = true
                     withContext(Dispatchers.Main) {
