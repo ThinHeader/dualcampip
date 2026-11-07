@@ -243,7 +243,13 @@ class GlCompositor {
         GLES20.glClearColor(0f, 0f, 0f, 1f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
         GLES20.glUseProgram(program)
-        val frame = PixelRect(0f, 0f, width.toFloat(), height.toFloat())
+        // Same 9:16 composition as the encoder. On a taller screen the rect covers the
+        // view and the GPU clips the overflow, so preview and the MP4 stay aligned.
+        val frame = coverFrame(
+            viewWidth = width.toFloat(),
+            viewHeight = height.toFloat(),
+            contentAspect = EncodeConfig.ASPECT_W_OVER_H,
+        )
         if (rear.hasFrame) {
             GLES20.glDisable(GLES20.GL_BLEND)
             drawStream(rear, frame, width, height, mask = false, radiusPx = 0f)
@@ -251,12 +257,12 @@ class GlCompositor {
         if (front.hasFrame) {
             val aspect = uprightAspect(front.geometry)
             val pipRect = pipRect(
-                frameWidth = width.toFloat(),
-                frameHeight = height.toFloat(),
+                frameWidth = frame.width,
+                frameHeight = frame.height,
                 contentAspect = aspect,
                 corner = pip.corner,
                 widthFraction = pip.widthFraction,
-            )
+            ).offset(frame.left, frame.top)
             val radius = pipCornerRadiusPx(pipRect, pip.radiusFraction)
             GLES20.glEnable(GLES20.GL_BLEND)
             GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)

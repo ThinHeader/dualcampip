@@ -116,7 +116,7 @@ class CameraXDualBackend(
         val preview = buildPreview(displayRotation, relaxed = true)
         rearPreview = preview
         preview.setSurfaceProvider(mainExecutor) { request ->
-            provide(request, rearTexture, CameraSlot.REAR, onStream)
+            provide(request, rearTexture, CameraSlot.REAR, displayRotation, onStream)
         }
         val selector = CameraSelector.DEFAULT_BACK_CAMERA
         cameraProvider.bindToLifecycle(owner, selector, preview)
@@ -148,10 +148,10 @@ class CameraXDualBackend(
         this.rearPreview = rear
         this.frontPreview = frontPreview
         rear.setSurfaceProvider(mainExecutor) { request ->
-            provide(request, rearTexture, CameraSlot.REAR, onStream)
+            provide(request, rearTexture, CameraSlot.REAR, displayRotation, onStream)
         }
         frontPreview.setSurfaceProvider(mainExecutor) { request ->
-            provide(request, frontTexture, CameraSlot.FRONT, onStream)
+            provide(request, frontTexture, CameraSlot.FRONT, displayRotation, onStream)
         }
         val rearSelector = selectorFor(back)
         val frontSelector = selectorFor(front)
@@ -248,22 +248,33 @@ class CameraXDualBackend(
         request: androidx.camera.core.SurfaceRequest,
         texture: SurfaceTexture,
         slot: CameraSlot,
+        displayRotation: Int,
         onStream: (CameraSlot, StreamGeometry) -> Unit,
     ) {
         val size = request.resolution
         texture.setDefaultBufferSize(size.width, size.height)
         request.setTransformationInfoListener(mainExecutor) { info ->
+            val cameraTransform = info.hasCameraTransform()
+            Log.i(
+                TAG,
+                "stream $slot ${size.width}x${size.height} rot=${info.rotationDegrees} " +
+                    "cameraTransform=$cameraTransform mirror=${info.isMirroring}",
+            )
             onStream(
                 slot,
                 StreamGeometry(
                     bufferWidth = size.width,
                     bufferHeight = size.height,
                     rotationDegrees = info.rotationDegrees,
-                    mirror = info.isMirroring,
+                    // The camera writes sensor rotation and the front mirror into the
+                    // SurfaceTexture matrix. Mirroring again would undo the selfie view.
+                    mirror = if (cameraTransform) false else info.isMirroring,
                     cropLeft = info.cropRect.left,
                     cropTop = info.cropRect.top,
                     cropRight = info.cropRect.right,
                     cropBottom = info.cropRect.bottom,
+                    cameraAppliesTransform = cameraTransform,
+                    displayRotationDegrees = surfaceRotationDegrees(displayRotation),
                 ),
             )
         }
@@ -328,5 +339,12 @@ class CameraXDualBackend(
     @SuppressLint("RestrictedApi")
     private companion object {
         const val TAG = "DualCamPiP"
+
+        fun surfaceRotationDegrees(rotation: Int): Int = when (rotation) {
+            android.view.Surface.ROTATION_90 -> 90
+            android.view.Surface.ROTATION_180 -> 180
+            android.view.Surface.ROTATION_270 -> 270
+            else -> 0
+        }
     }
 }

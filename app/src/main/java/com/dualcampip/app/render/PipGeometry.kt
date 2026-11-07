@@ -51,6 +51,31 @@ fun pipRect(
     return PixelRect(left, top, left + pipW, top + pipH)
 }
 
+/**
+ * Scales a [contentAspect] (width/height) rectangle so it covers [viewWidth] x [viewHeight].
+ * The rect is centered and may extend outside the view; the caller clips to the view.
+ */
+fun coverFrame(viewWidth: Float, viewHeight: Float, contentAspect: Float): PixelRect {
+    val safeAspect = contentAspect.coerceAtLeast(0.01f)
+    if (viewWidth <= 0f || viewHeight <= 0f) return PixelRect(0f, 0f, viewWidth, viewHeight)
+    val viewAspect = viewWidth / viewHeight
+    return if (safeAspect > viewAspect) {
+        val height = viewHeight
+        val width = height * safeAspect
+        val left = (viewWidth - width) / 2f
+        PixelRect(left, 0f, left + width, height)
+    } else {
+        val width = viewWidth
+        val height = width / safeAspect
+        val top = (viewHeight - height) / 2f
+        PixelRect(0f, top, width, top + height)
+    }
+}
+
+fun PixelRect.offset(dx: Float, dy: Float): PixelRect {
+    return PixelRect(left + dx, top + dy, right + dx, bottom + dy)
+}
+
 fun pipCornerRadiusPx(rect: PixelRect, radiusFraction: Float): Float {
     val half = min(rect.width, rect.height) / 2f
     if (half <= 1f) return 0f

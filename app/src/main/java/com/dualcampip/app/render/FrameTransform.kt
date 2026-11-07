@@ -8,9 +8,15 @@ import kotlin.math.abs
  *
  * Texture coordinates follow the Android SurfaceTexture contract: the matrix from
  * [android.graphics.SurfaceTexture.getTransformMatrix] is applied to Grafika-style
- * coordinates where (0,0) is the bottom-left of the unrotated buffer and (0,1) is
- * the top-left. [StreamGeometry.rotationDegrees] then turns that buffer upright,
- * and [StreamGeometry.mirror] flips the upright image horizontally.
+ * coordinates where (0,0) is the bottom-left and (0,1) is the top-left.
+ *
+ * A surface connected straight to the camera already stores sensor rotation and the
+ * front-camera mirror in that matrix ([StreamGeometry.cameraAppliesTransform]).
+ * [StreamGeometry.rotationDegrees] is then only the amount the buffer must turn to
+ * match the target, used for aspect and crop — not applied a second time.
+ * [StreamGeometry.displayRotationDegrees] is the extra turn when the display is
+ * not in its natural orientation. When the matrix does not contain the camera
+ * transform, [StreamGeometry.rotationDegrees] is applied in buffer space instead.
  */
 fun sampleTexCoord(
     lu: Float,
@@ -20,15 +26,19 @@ fun sampleTexCoord(
     surfaceTextureMatrix: FloatArray,
 ): Pair<Float, Float> {
     if (geometry.bufferWidth <= 0 || geometry.bufferHeight <= 0) return 0f to 0f
-    val cropW = (geometry.cropRight - geometry.cropLeft).coerceAtLeast(1)
-    val cropH = (geometry.cropBottom - geometry.cropTop).coerceAtLeast(1)
-    val rot = normalizeRotation(geometry.rotationDegrees)
-    val uprightW = if (rot == 90 || rot == 270) cropH else cropW
-    val uprightH = if (rot == 90 || rot == 270) cropW else cropH
-    val srcAspect = uprightW.toFloat() / uprightH.coerceAtLeast(1)
+    val srcAspect = uprightAspect(geometry)
     val (su0, sv0) = centerCropUv(lu, lv, destAspect.coerceAtLeast(0.01f), srcAspect)
     val su = if (geometry.mirror) 1f - su0 else su0
-    val (bu, bv) = uprightToBufferUv(su, sv0, rot)
+    if (geometry.cameraAppliesTransform) {
+        val window = orientedCropNorm(geometry)
+        val u = window[0] + su * (window[2] - window[0])
+        val v = window[1] + sv0 * (window[3] - window[1])
+        val (nu, nv) = uprightToBufferUv(u, v, normalizeRotation(geometry.displayRotationDegrees))
+        return applyStMatrix(surfaceTextureMatrix, nu, 1f - nv)
+    }
+    val cropW = (geometry.cropRight - geometry.cropLeft).coerceAtLeast(1)
+    val cropH = (geometry.cropBottom - geometry.cropTop).coerceAtLeast(1)
+    val (bu, bv) = uprightToBufferUv(su, sv0, normalizeRotation(geometry.rotationDegrees))
     val fullU = (geometry.cropLeft + bu * cropW) / geometry.bufferWidth.toFloat()
     val fullV = (geometry.cropTop + bv * cropH) / geometry.bufferHeight.toFloat()
     return applyStMatrix(surfaceTextureMatrix, fullU, 1f - fullV)
@@ -108,6 +118,51 @@ internal fun applyStMatrix(matrix: FloatArray, x: Float, y: Float): Pair<Float, 
     val oy = matrix[1] * x + matrix[5] * y + matrix[13]
     val ow = matrix[3] * x + matrix[7] * y + matrix[15]
     return if (abs(ow) > 0.0001f && abs(ow - 1f) > 0.0001f) ox / ow to oy / ow else ox to oy
+}
+
+/** Crop rect mapped into the upright image, as fractions of that image. */
+internal fun orientedCropNorm(geometry: StreamGeometry): FloatArray {
+    val rot = normalizeRotation(geometry.rotationDegrees)
+    val bw = geometry.bufferWidth.toFloat().coerceAtLeast(1f)
+    val bh = geometry.bufferHeight.toFloat().coerceAtLeast(1f)
+    val uprightW = if (rot == 90 || rot == 270) bh else bw
+    val uprightH = if (rot == 90 || rot == 270) bw else bh
+    var minX = Float.POSITIVE_INFINITY
+    var minY = Float.POSITIVE_INFINITY
+    var maxX = Float.NEGATIVE_INFINITY
+    var maxY = Float.NEGATIVE_INFINITY
+    val xs = floatArrayOf(geometry.cropLeft.toFloat(), geometry.cropRight.toFloat())
+    val ys = floatArrayOf(geometry.cropTop.toFloat(), geometry.cropBottom.toFloat())
+    for (x in xs) {
+        for (y in ys) {
+            val (ux, uy) = rotateBufferToUpright(x, y, bw, bh, rot)
+            minX = minOf(minX, ux)
+            maxX = maxOf(maxX, ux)
+            minY = minOf(minY, uy)
+            maxY = maxOf(maxY, uy)
+        }
+    }
+    return floatArrayOf(
+        (minX / uprightW).coerceIn(0f, 1f),
+        (minY / uprightH).coerceIn(0f, 1f),
+        (maxX / uprightW).coerceIn(0f, 1f),
+        (maxY / uprightH).coerceIn(0f, 1f),
+    )
+}
+
+internal fun rotateBufferToUpright(
+    x: Float,
+    y: Float,
+    bufferWidth: Float,
+    bufferHeight: Float,
+    rotation: Int,
+): Pair<Float, Float> {
+    return when (normalizeRotation(rotation)) {
+        90 -> (bufferHeight - y) to x
+        180 -> (bufferWidth - x) to (bufferHeight - y)
+        270 -> y to (bufferWidth - x)
+        else -> x to y
+    }
 }
 
 internal fun normalizeRotation(degrees: Int): Int {

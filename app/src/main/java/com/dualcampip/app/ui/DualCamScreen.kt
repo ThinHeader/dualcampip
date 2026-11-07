@@ -13,16 +13,15 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -39,6 +38,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
@@ -55,7 +56,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dualcampip.app.DualCamViewModel
 import com.dualcampip.app.R
-import com.dualcampip.app.encode.EncodeConfig
 import com.dualcampip.app.ui.theme.Ink
 import com.dualcampip.app.ui.theme.Line
 import com.dualcampip.app.ui.theme.Muted
@@ -168,6 +168,8 @@ private fun PermissionPane(onRequest: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .padding(28.dp),
         verticalArrangement = Arrangement.Center,
     ) {
@@ -200,84 +202,91 @@ private fun CameraPane(
     onRecord: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    Column(
+    val probing = state.phase == Phase.Probing || state.permission == PermissionState.Unknown
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 16.dp),
+            .background(Ink),
     ) {
-        Text(text = stringResource(R.string.title), style = androidx.compose.material3.MaterialTheme.typography.headlineMedium)
-        Text(text = stringResource(R.string.subtitle), color = Muted)
-        state.backendLabel?.let {
-            Spacer(Modifier.height(6.dp))
-            Text(text = it, color = Muted)
+        if (state.permission == PermissionState.Granted) {
+            PreviewSurface(
+                modifier = Modifier.fillMaxSize(),
+                onAvailable = onSurfaceAvailable,
+                onDestroyed = onSurfaceDestroyed,
+            )
         }
-        state.unsupportedMessage?.let { message ->
-            Spacer(Modifier.height(12.dp))
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(WarningBg)
-                    .padding(14.dp),
-            ) {
-                Text(text = stringResource(R.string.unsupported_title), color = WarningFg)
-                Spacer(Modifier.height(4.dp))
-                Text(text = message, color = WarningFg)
-            }
-        }
-        state.statusMessage?.let {
-            Spacer(Modifier.height(8.dp))
-            Text(text = it, color = Muted)
-        }
-        Spacer(Modifier.height(12.dp))
-        BoxWithConstraints(
+        Column(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            contentAlignment = Alignment.Center,
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Black.copy(alpha = 0.72f), Color.Transparent),
+                    ),
+                )
+                .statusBarsPadding()
+                .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 36.dp),
         ) {
-            val ratio = EncodeConfig.WIDTH.toFloat() / EncodeConfig.HEIGHT
-            val probing = state.phase == Phase.Probing || state.permission == PermissionState.Unknown
-            val chrome = if (probing) 64.dp else 28.dp
-            val availableHeight = (maxHeight - chrome).coerceAtLeast(120.dp)
-            val frameWidth = if (maxWidth / availableHeight > ratio) availableHeight * ratio else maxWidth
-            val frameHeight = frameWidth / ratio
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(text = stringResource(R.string.frame_label), color = Muted)
+            Text(text = stringResource(R.string.title), style = androidx.compose.material3.MaterialTheme.typography.headlineMedium)
+            Text(text = stringResource(R.string.subtitle), color = Muted)
+            state.backendLabel?.let {
                 Spacer(Modifier.height(6.dp))
-                if (probing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier
-                            .padding(bottom = 8.dp)
-                            .size(22.dp),
-                        color = Paper,
-                        strokeWidth = 2.dp,
-                    )
-                }
-                Box(
+                Text(text = it, color = Muted)
+            }
+            state.unsupportedMessage?.let { message ->
+                Spacer(Modifier.height(12.dp))
+                Column(
                     modifier = Modifier
-                        .size(frameWidth, frameHeight)
-                        .border(1.dp, Line),
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(WarningBg)
+                        .padding(14.dp),
                 ) {
-                    if (state.permission == PermissionState.Granted) {
-                        PreviewSurface(
-                            modifier = Modifier.fillMaxSize(),
-                            onAvailable = onSurfaceAvailable,
-                            onDestroyed = onSurfaceDestroyed,
-                        )
-                    }
+                    Text(text = stringResource(R.string.unsupported_title), color = WarningFg)
+                    Spacer(Modifier.height(4.dp))
+                    Text(text = message, color = WarningFg)
                 }
             }
+            state.statusMessage?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(text = it, color = Paper)
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.support_note),
+                color = Muted,
+                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+            )
         }
-        RecordingMessage(state.recording)
-        Spacer(Modifier.height(12.dp))
-        Controls(
-            state = state,
-            onRecord = onRecord,
-            onOpenSettings = onOpenSettings,
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(text = stringResource(R.string.support_note), color = Muted)
+        if (probing) {
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(28.dp),
+                color = Paper,
+                strokeWidth = 2.dp,
+            )
+        }
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f)),
+                    ),
+                )
+                .navigationBarsPadding()
+                .padding(top = 36.dp, bottom = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            RecordingMessage(state.recording)
+            Controls(
+                state = state,
+                onRecord = onRecord,
+                onOpenSettings = onOpenSettings,
+            )
+        }
     }
 }
 
@@ -291,9 +300,8 @@ private fun RecordingMessage(recording: RecordingUi) {
         RecordingUi.Idle -> null
     }
     if (text != null) {
-        Spacer(Modifier.height(10.dp))
         val color = if (recording is RecordingUi.Saved) SavedFg else Paper
-        Text(text = text, color = color)
+        Text(text = text, color = color, modifier = Modifier.padding(bottom = 10.dp))
     }
 }
 
@@ -320,18 +328,20 @@ private fun Controls(
     val saving = state.recording is RecordingUi.Saving
     val recordEnabled = recording || (state.canRecord && !saving)
     val recordDescription = stringResource(if (recording) R.string.record_stop else R.string.record_start)
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    Box(modifier = Modifier.fillMaxWidth()) {
         TextButton(
             onClick = onOpenSettings,
             enabled = !recording && !saving,
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = 8.dp),
         ) {
             Text(stringResource(R.string.settings), color = if (recording || saving) Muted else Paper)
         }
         Box(
+            modifier = Modifier.align(Alignment.Center),
+        ) {
+            Box(
             modifier = Modifier
                 .size(78.dp)
                 .clip(CircleShape)
@@ -363,6 +373,6 @@ private fun Controls(
                 )
             }
         }
-        Spacer(Modifier.width(72.dp))
+        }
     }
 }
