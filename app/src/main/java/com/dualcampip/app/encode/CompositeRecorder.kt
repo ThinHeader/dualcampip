@@ -37,8 +37,6 @@ class CompositeRecorder(context: Context) {
     @Volatile private var failure: String? = null
     private var released = false
 
-    val clockBaseNs: Long get() = recordStartNs
-
     fun start(): Surface {
         check(!released)
         displayName = recordingDisplayName()

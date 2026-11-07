@@ -53,14 +53,13 @@ class GlCompositor {
         .asFloatBuffer()
 
     @Volatile var pip: PipConfig = PipConfig.Default
-    @Volatile var recordClockBaseNs: Long = 0L
     @Volatile var recording: Boolean = false
     @Volatile var onBothFrames: (() -> Unit)? = null
 
     private val frameGate = AtomicInteger(0)
     private var notifiedGate = -1
     private var loggedFrame = false
-    private var lastEncoderPtsNs = 0L
+    private val encoderPts = EncoderPtsClock(FRAME_INTERVAL_NS)
     private val mainHandler = Handler(android.os.Looper.getMainLooper())
 
     fun attachPreview(surface: Surface, width: Int, height: Int) = call {
@@ -84,14 +83,13 @@ class GlCompositor {
         }
     }
 
-    fun beginRecording(surface: Surface, clockBaseNs: Long) = call {
+    fun beginRecording(surface: Surface) = call {
         ensureContext()
         val anchor = previewEgl ?: pbuffer
         if (anchor != null) egl.makeCurrent(anchor)
         encoderEgl?.let { egl.destroySurface(it) }
         encoderEgl = egl.createWindowSurface(surface)
-        recordClockBaseNs = clockBaseNs
-        lastEncoderPtsNs = 0L
+        encoderPts.reset()
         recording = true
     }
 
@@ -215,25 +213,14 @@ class GlCompositor {
         }
         val encoder = encoderEgl
         if (recording && encoder != null && rear.hasFrame) {
-            val pts = nextPts(rear.texture.timestamp)
-            if (pts - lastEncoderPtsNs >= FRAME_INTERVAL_NS || lastEncoderPtsNs == 0L) {
+            val pts = encoderPts.take(rear.texture.timestamp, System.nanoTime())
+            if (pts != null) {
                 egl.makeCurrent(encoder)
                 drawScene(EncodeConfig.WIDTH, EncodeConfig.HEIGHT)
                 egl.setPresentationTime(encoder, pts)
                 egl.swap(encoder)
-                lastEncoderPtsNs = pts
             }
         }
-    }
-
-    private fun nextPts(textureTimestampNs: Long): Long {
-        val raw = if (textureTimestampNs > 0L) {
-            textureTimestampNs - recordClockBaseNs
-        } else {
-            System.nanoTime() - recordClockBaseNs
-        }
-        val pts = raw.coerceAtLeast(lastEncoderPtsNs + 1_000_000L)
-        return pts
     }
 
     private fun drawScene(width: Int, height: Int) {
