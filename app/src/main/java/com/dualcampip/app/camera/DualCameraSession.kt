@@ -12,8 +12,10 @@ import com.dualcampip.app.model.StreamGeometry
 
 /**
  * Opens front + rear together. CameraX concurrent binding is tried first.
- * If that is missing or throws, Camera2 multi-open is used when the platform
- * reports a concurrent pair. Otherwise only the rear camera is previewed.
+ * Fullscreen must be the rear camera and PiP the front camera. A bind that
+ * opens two streams of the same facing is rejected. Camera2 multi-open is used
+ * when CameraX is missing, throws, or cannot prove a front+back pair. Otherwise
+ * only the rear camera is previewed and recording stays disabled.
  */
 class DualCameraSession(
     context: Context,
@@ -37,6 +39,7 @@ class DualCameraSession(
     private var mode = Mode.IDLE
     private var unsupportedMessage = ""
     private var openFailedMessage = ""
+    private var sameFacingMessage = ""
 
     fun start(
         owner: LifecycleOwner,
@@ -46,6 +49,7 @@ class DualCameraSession(
         displayRotation: Int,
         unsupportedMessage: String,
         openFailedMessage: String,
+        sameFacingMessage: String,
     ) {
         this.owner = owner
         this.rearTexture = rearTexture
@@ -53,6 +57,7 @@ class DualCameraSession(
         this.rotation = displayRotation
         this.unsupportedMessage = unsupportedMessage
         this.openFailedMessage = openFailedMessage
+        this.sameFacingMessage = sameFacingMessage
         cameraX.bindProvider(provider)
         val cameraXPair = runCatching { cameraX.findFrontBack() }.getOrNull()
         camera2Available = runCatching { camera2.findFrontBackIds() != null }.getOrDefault(false)
@@ -62,11 +67,21 @@ class DualCameraSession(
             return
         }
         if (cameraXPair != null) {
-            val opened = openCameraX()
-            if (opened) {
-                mode = Mode.CAMERAX
-                listener.onDualReady("CameraX")
-                return
+            when (openCameraX()) {
+                OpenResult.OPENED -> {
+                    mode = Mode.CAMERAX
+                    listener.onDualReady("CameraX")
+                    return
+                }
+                OpenResult.SAME_FACING -> {
+                    if (camera2Available) {
+                        openCamera2()
+                    } else {
+                        openRearOnly(sameFacingMessage)
+                    }
+                    return
+                }
+                OpenResult.FAILED -> Unit
             }
         }
         if (camera2Available) {
@@ -87,10 +102,10 @@ class DualCameraSession(
         camera2.release()
     }
 
-    private fun openCameraX(): Boolean {
-        val lifecycle = owner ?: return false
-        val rear = rearTexture ?: return false
-        val front = frontTexture ?: return false
+    private fun openCameraX(): OpenResult {
+        val lifecycle = owner ?: return OpenResult.FAILED
+        val rear = rearTexture ?: return OpenResult.FAILED
+        val front = frontTexture ?: return OpenResult.FAILED
         return try {
             cameraX.openConcurrent(
                 owner = lifecycle,
@@ -103,11 +118,15 @@ class DualCameraSession(
                     main.post { onCameraXRuntimeFailure() }
                 },
             )
-            true
+            OpenResult.OPENED
+        } catch (thrown: SameFacingCamerasException) {
+            Log.e(TAG, "CameraX did not open a front+back pair", thrown)
+            cameraX.close()
+            OpenResult.SAME_FACING
         } catch (thrown: RuntimeException) {
             Log.e(TAG, "CameraX concurrent bind failed", thrown)
             cameraX.close()
-            false
+            OpenResult.FAILED
         }
     }
 
@@ -138,7 +157,8 @@ class DualCameraSession(
                 main.post {
                     if (mode != Mode.CAMERA2) return@post
                     mode = Mode.IDLE
-                    openRearOnly(openFailedMessage)
+                    val message = if (reason == SAME_FACING_FAILURE) sameFacingMessage else openFailedMessage
+                    openRearOnly(message)
                 }
             },
         )
@@ -178,6 +198,12 @@ class DualCameraSession(
         CAMERAX,
         CAMERA2,
         REAR_ONLY,
+    }
+
+    private enum class OpenResult {
+        OPENED,
+        FAILED,
+        SAME_FACING,
     }
 
     private companion object {

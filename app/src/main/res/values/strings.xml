@@ -15,6 +15,7 @@
     <string name="unsupported_short">此设备不支持前后摄同时打开，双摄录制已停用。</string>
     <string name="single_preview_hint">当前只有后置预览，录制已停用</string>
     <string name="open_failed">无法同时打开前置与后置摄像头。双摄录制已停用。</string>
+    <string name="same_facing_failed">前后摄没有真正同时打开，两路都是同一侧摄像头。双摄录制已停用。</string>
     <string name="backend_label">引擎：%1$s</string>
     <string name="backend_rear_only">仅后置预览</string>
     <string name="record_start">开始录制</string>

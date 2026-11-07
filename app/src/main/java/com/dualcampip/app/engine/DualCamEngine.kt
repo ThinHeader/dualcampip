@@ -249,6 +249,7 @@ class DualCamEngine(
                     displayRotation = displayRotation,
                     unsupportedMessage = app.getString(R.string.unsupported_body),
                     openFailedMessage = app.getString(R.string.open_failed),
+                    sameFacingMessage = app.getString(R.string.same_facing_failed),
                 )
             }
         } catch (thrown: Throwable) {
@@ -317,6 +318,7 @@ class DualCamEngine(
 
     private inner class SessionListener : DualCameraSession.Listener {
         override fun onDualReady(backendLabel: String) {
+            compositor.resetFrameGate()
             _state.update {
                 it.copy(
                     phase = Phase.Preview,
@@ -329,6 +331,7 @@ class DualCamEngine(
         }
 
         override fun onUnsupported(message: String) {
+            compositor.resetFrameGate()
             _state.update {
                 it.copy(
                     phase = Phase.Preview,

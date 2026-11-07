@@ -41,15 +41,7 @@ class Camera2DualBackend(
 
     fun findFrontBackIds(): Pair<String, String>? {
         val cameras = manager.cameraIdList.map { id ->
-            val facing = manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING)
-            CameraIdInfo(
-                id = id,
-                facing = when (facing) {
-                    CameraCharacteristics.LENS_FACING_FRONT -> LensFacing.FRONT
-                    CameraCharacteristics.LENS_FACING_BACK -> LensFacing.BACK
-                    else -> LensFacing.OTHER
-                },
-            )
+            CameraIdInfo(id = id, facing = facingOf(id))
         }
         val pair = selectConcurrentPair(manager.concurrentCameraIds, cameras) ?: return null
         return pair.first.id to pair.second.id
@@ -70,6 +62,17 @@ class Camera2DualBackend(
                 closeOnThread()
                 val (backId, frontId) = findFrontBackIds()
                     ?: throw IllegalStateException("no camera2 pair")
+                val backFacing = facingOf(backId)
+                val frontFacing = facingOf(frontId)
+                Log.i(TAG, "Camera2 open back=$backId/$backFacing front=$frontId/$frontFacing")
+                if (!openedCamerasAreRearMainFrontPip(backFacing, frontFacing, backId, frontId)) {
+                    throw SameFacingCamerasException(
+                        "Camera2 pair is not rear+front ($backId/$backFacing, $frontId/$frontFacing)",
+                    )
+                }
+                if (rearTexture === frontTexture) {
+                    throw SameFacingCamerasException("rear and front preview textures are the same object")
+                }
                 val pending = AtomicInteger(2)
                 val failed = AtomicBoolean(false)
                 openOne(
@@ -110,6 +113,10 @@ class Camera2DualBackend(
                         }
                     },
                 )
+            } catch (thrown: SameFacingCamerasException) {
+                Log.e(TAG, "Camera2 pair rejected", thrown)
+                closeOnThread()
+                if (gen == generation.get()) onFailed(SAME_FACING_FAILURE)
             } catch (thrown: RuntimeException) {
                 Log.e(TAG, "Camera2 dual open failed", thrown)
                 closeOnThread()
@@ -264,6 +271,15 @@ class Camera2DualBackend(
         sessions.clear()
         devices.clear()
         surfaces.clear()
+    }
+
+    private fun facingOf(id: String): LensFacing {
+        val facing = manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING)
+        return when (facing) {
+            CameraCharacteristics.LENS_FACING_FRONT -> LensFacing.FRONT
+            CameraCharacteristics.LENS_FACING_BACK -> LensFacing.BACK
+            else -> LensFacing.OTHER
+        }
     }
 
     private fun chooseSize(characteristics: CameraCharacteristics): Size {
