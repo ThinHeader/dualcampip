@@ -3,6 +3,7 @@ package com.dualcampip.app.render
 import com.dualcampip.app.model.PipConfig
 import com.dualcampip.app.model.PipCorner
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PipGeometryTest {
@@ -24,6 +25,25 @@ class PipGeometryTest {
         assertEquals(320f, rect.height, 0.5f)
         assertEquals(511.2f, rect.left, 0.5f)
         assertEquals(931.2f, rect.top, 0.5f)
+    }
+
+    @Test
+    fun coverFrameFillsATallerViewByOverflowingTheSides() {
+        val frame = coverFrame(viewWidth = 1080f, viewHeight = 2400f, contentAspect = 720f / 1280f)
+        assertEquals(2400f, frame.height, 0.5f)
+        assertEquals(0f, frame.top, 0.5f)
+        assertTrue(frame.width > 1080f)
+        assertTrue(frame.left < 0f)
+        assertEquals(720f / 1280f, frame.width / frame.height, 0.001f)
+    }
+
+    @Test
+    fun coverFrameMatchesAnExactPortraitFrame() {
+        val frame = coverFrame(viewWidth = 720f, viewHeight = 1280f, contentAspect = 720f / 1280f)
+        assertEquals(0f, frame.left, 0.5f)
+        assertEquals(0f, frame.top, 0.5f)
+        assertEquals(720f, frame.width, 0.5f)
+        assertEquals(1280f, frame.height, 0.5f)
     }
 
     @Test

@@ -33,6 +33,37 @@ class FrameTransformTest {
     }
 
     @Test
+    fun cameraTransformLeavesSensorRotationToTheSurfaceMatrix() {
+        val geometry = StreamGeometry(
+            bufferWidth = 1280,
+            bufferHeight = 720,
+            rotationDegrees = 90,
+            mirror = false,
+            cameraAppliesTransform = true,
+        )
+        val (u, v) = sampleTexCoord(
+            lu = 0f,
+            lv = 0f,
+            destAspect = 720f / 1280f,
+            geometry = geometry,
+            surfaceTextureMatrix = yFlipStMatrix(),
+        )
+        // A direct camera surface already rotates in getTransformMatrix. Applying the
+        // sensor rotation again is what turned the portrait preview on its side.
+        assertEquals(0f, u, 0.001f)
+        assertEquals(0f, v, 0.001f)
+    }
+
+    @Test
+    fun fullSensorCropStaysTheWholeUprightFrame() {
+        val bounds = orientedCropNorm(StreamGeometry(1280, 720, 90, mirror = false))
+        assertEquals(0f, bounds[0], 0.001f)
+        assertEquals(0f, bounds[1], 0.001f)
+        assertEquals(1f, bounds[2], 0.001f)
+        assertEquals(1f, bounds[3], 0.001f)
+    }
+
+    @Test
     fun rotation90WithYFlipSamplesThePortraitTopLeft() {
         val geometry = StreamGeometry(1280, 720, 90, mirror = false)
         val (u, v) = sampleTexCoord(

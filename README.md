@@ -40,7 +40,7 @@
 
 1. 授予相机和麦克风。
 2. 应用检测这台设备能否同时打开前置和后置。
-3. 可以的话，取景框里是后置全屏加前置画中画。取景框外的按钮不会进成片；框内的构图和成片一致。
+3. 可以的话，预览铺满屏幕：后置全屏，前置画中画。红色录制按钮浮在画面下方。成片仍是竖屏 720×1280，预览是这幅画面的铺满裁切，方向和构图与成片一致。按钮不会进成片。
 4. 点红色按钮开始，再点一次停止。文件写入 `Movies/DualCamPiP/`，文件名类似 `DualCam_20261107_152830_128.mp4`。
 5. “画中画”里可以改角落、宽度（默认约为画面宽度的 25%）和圆角。录制过程中不能改。
 
@@ -49,7 +49,7 @@
 ## 架构
 
 - `camera/DualCameraSession`：运行时探测并发能力。先用 CameraX `ConcurrentCamera` 各绑一路 `Preview`（全屏后置、画中画前置）。绑定后若打开的两颗相机不是一后一前，或绑定失败，再在 Camera2 确认前后组合后同时 `openCamera`。两种都不能证明是前后摄时，只开后置预览，并禁用录制。
-- `render/GlCompositor`：同一套着色器把后置画满、前置画成圆角画中画。预览 Surface 和编码器 Surface 共用几何计算（`render/PipGeometry`、`render/FrameTransform`）。
+- `render/GlCompositor`：同一套着色器把后置画满、前置画成圆角画中画。预览按成片的 9:16 铺满屏幕，编码器画同一幅不裁切的 720×1280。相机直接写入的 SurfaceTexture 矩阵里已经包含传感器方向，合成时不再转一次。
 - `encode/CompositeRecorder`：MediaCodec 把合成画面编成 H.264，麦克风编成 AAC，再复用进一个 MP4。
 - `gallery/GallerySaver`：以 `IS_PENDING` 写入 MediaStore，成功后再发布。失败则删除这条未完成记录。
 - `ui`：Compose 取景、权限和画中画设置。Activity 只负责窗口。

@@ -319,7 +319,11 @@ class Camera2DualBackend(
             bufferWidth = size.width,
             bufferHeight = size.height,
             rotationDegrees = rotation,
-            mirror = facing == CameraCharacteristics.LENS_FACING_FRONT,
+            // The camera writes orientation, including the front-camera mirror, into the
+            // SurfaceTexture. rotationDegrees stays for upright aspect only.
+            mirror = false,
+            cameraAppliesTransform = true,
+            displayRotationDegrees = display,
         )
     }
 
