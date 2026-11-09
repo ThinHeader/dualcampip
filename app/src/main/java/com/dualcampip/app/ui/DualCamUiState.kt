@@ -11,6 +11,7 @@ data class DualCamUiState(
     val canRecord: Boolean = false,
     val recording: RecordingUi = RecordingUi.Idle,
     val pip: PipConfig = PipConfig.Default,
+    val frontAspect: Float = 9f / 16f,
 )
 
 enum class PermissionState {

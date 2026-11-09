@@ -50,17 +50,17 @@ fun PipSettingsSheet(
             Text(text = stringResource(R.string.settings), style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
             Text(text = stringResource(R.string.pip_corner), color = Muted)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CornerButton(R.string.corner_top_start, config.corner == PipCorner.TOP_START, locked) {
-                    onChange(config.copy(corner = PipCorner.TOP_START))
+                CornerButton(R.string.corner_top_start, config.corner == PipCorner.TOP_START && config.leftFraction == null, locked) {
+                    onChange(config.atCorner(PipCorner.TOP_START))
                 }
-                CornerButton(R.string.corner_top_end, config.corner == PipCorner.TOP_END, locked) {
-                    onChange(config.copy(corner = PipCorner.TOP_END))
+                CornerButton(R.string.corner_top_end, config.corner == PipCorner.TOP_END && config.leftFraction == null, locked) {
+                    onChange(config.atCorner(PipCorner.TOP_END))
                 }
-                CornerButton(R.string.corner_bottom_start, config.corner == PipCorner.BOTTOM_START, locked) {
-                    onChange(config.copy(corner = PipCorner.BOTTOM_START))
+                CornerButton(R.string.corner_bottom_start, config.corner == PipCorner.BOTTOM_START && config.leftFraction == null, locked) {
+                    onChange(config.atCorner(PipCorner.BOTTOM_START))
                 }
-                CornerButton(R.string.corner_bottom_end, config.corner == PipCorner.BOTTOM_END, locked) {
-                    onChange(config.copy(corner = PipCorner.BOTTOM_END))
+                CornerButton(R.string.corner_bottom_end, config.corner == PipCorner.BOTTOM_END && config.leftFraction == null, locked) {
+                    onChange(config.atCorner(PipCorner.BOTTOM_END))
                 }
             }
             Text(
