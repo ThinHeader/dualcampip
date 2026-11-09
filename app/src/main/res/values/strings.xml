@@ -29,6 +29,7 @@
     <string name="gallery_failed">无法写入系统相册。</string>
     <string name="generic_error">出错了，请重试。</string>
     <string name="settings">画中画</string>
+    <string name="pip_drag_cd">拖动前置画面</string>
     <string name="pip_corner">位置</string>
     <string name="corner_top_start">左上</string>
     <string name="corner_top_end">右上</string>

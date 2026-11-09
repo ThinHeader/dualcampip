@@ -2,6 +2,7 @@ package com.dualcampip.app.render
 
 import com.dualcampip.app.model.PipConfig
 import com.dualcampip.app.model.PipCorner
+import kotlin.math.max
 import kotlin.math.min
 
 data class PixelRect(
@@ -22,6 +23,8 @@ fun pipRect(
     widthFraction: Float,
     marginFraction: Float = PipConfig.MARGIN_FRACTION,
     startIsLeft: Boolean = true,
+    leftFraction: Float? = null,
+    topFraction: Float? = null,
 ): PixelRect {
     val aspect = contentAspect.coerceAtLeast(0.05f)
     val margin = marginFraction.coerceIn(0f, 0.2f) * frameWidth
@@ -37,18 +40,54 @@ fun pipRect(
         pipH = maxH
         pipW = pipH * aspect
     }
-    val towardStart = when (corner) {
-        PipCorner.TOP_START, PipCorner.BOTTOM_START -> true
-        PipCorner.TOP_END, PipCorner.BOTTOM_END -> false
+    val (left, top) = if (leftFraction != null && topFraction != null) {
+        clampPipTopLeft(
+            left = leftFraction * frameWidth,
+            top = topFraction * frameHeight,
+            pipWidth = pipW,
+            pipHeight = pipH,
+            bounds = PixelRect(0f, 0f, frameWidth, frameHeight),
+            margin = margin,
+        )
+    } else {
+        val towardStart = when (corner) {
+            PipCorner.TOP_START, PipCorner.BOTTOM_START -> true
+            PipCorner.TOP_END, PipCorner.BOTTOM_END -> false
+        }
+        val towardTop = when (corner) {
+            PipCorner.TOP_START, PipCorner.TOP_END -> true
+            PipCorner.BOTTOM_START, PipCorner.BOTTOM_END -> false
+        }
+        val placeLeft = if (startIsLeft) towardStart else !towardStart
+        val cornerLeft = if (placeLeft) margin else frameWidth - margin - pipW
+        val cornerTop = if (towardTop) margin else frameHeight - margin - pipH
+        cornerLeft to cornerTop
     }
-    val towardTop = when (corner) {
-        PipCorner.TOP_START, PipCorner.TOP_END -> true
-        PipCorner.BOTTOM_START, PipCorner.BOTTOM_END -> false
-    }
-    val placeLeft = if (startIsLeft) towardStart else !towardStart
-    val left = if (placeLeft) margin else frameWidth - margin - pipW
-    val top = if (towardTop) margin else frameHeight - margin - pipH
     return PixelRect(left, top, left + pipW, top + pipH)
+}
+
+/** Portion of the composition frame that is actually on screen, in frame pixels. */
+fun visibleFrameBounds(frame: PixelRect, viewWidth: Float, viewHeight: Float): PixelRect {
+    val left = max(0f, -frame.left)
+    val top = max(0f, -frame.top)
+    val right = min(frame.width, viewWidth - frame.left)
+    val bottom = min(frame.height, viewHeight - frame.top)
+    return PixelRect(left, top, max(left + 1f, right), max(top + 1f, bottom))
+}
+
+fun clampPipTopLeft(
+    left: Float,
+    top: Float,
+    pipWidth: Float,
+    pipHeight: Float,
+    bounds: PixelRect,
+    margin: Float,
+): Pair<Float, Float> {
+    val minLeft = bounds.left + margin
+    val minTop = bounds.top + margin
+    val maxLeft = max(minLeft, bounds.right - margin - pipWidth)
+    val maxTop = max(minTop, bounds.bottom - margin - pipHeight)
+    return left.coerceIn(minLeft, maxLeft) to top.coerceIn(minTop, maxTop)
 }
 
 /**

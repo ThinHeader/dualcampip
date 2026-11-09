@@ -16,6 +16,7 @@ import com.dualcampip.app.model.CameraSlot
 import com.dualcampip.app.model.PipConfig
 import com.dualcampip.app.model.StreamGeometry
 import com.dualcampip.app.render.GlCompositor
+import com.dualcampip.app.render.uprightAspect
 import com.dualcampip.app.settings.PipSettingsStore
 import com.dualcampip.app.ui.DualCamUiState
 import com.dualcampip.app.ui.PermissionState
@@ -345,6 +346,12 @@ class DualCamEngine(
 
         override fun onStream(slot: CameraSlot, geometry: StreamGeometry) {
             compositor.updateGeometry(slot, geometry)
+            if (slot == CameraSlot.FRONT) {
+                val aspect = uprightAspect(geometry)
+                _state.update { current ->
+                    if (current.frontAspect == aspect) current else current.copy(frontAspect = aspect)
+                }
+            }
         }
 
         override fun onFatal(message: String) {

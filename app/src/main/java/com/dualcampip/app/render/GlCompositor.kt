@@ -249,6 +249,8 @@ class GlCompositor {
                 contentAspect = aspect,
                 corner = pip.corner,
                 widthFraction = pip.widthFraction,
+                leftFraction = pip.leftFraction,
+                topFraction = pip.topFraction,
             ).offset(frame.left, frame.top)
             val radius = pipCornerRadiusPx(pipRect, pip.radiusFraction)
             GLES20.glEnable(GLES20.GL_BLEND)

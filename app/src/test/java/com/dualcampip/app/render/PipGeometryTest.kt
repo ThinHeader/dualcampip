@@ -69,6 +69,44 @@ class PipGeometryTest {
     }
 
     @Test
+    fun freePositionOverridesTheCornerAndStaysInside() {
+        val rect = pipRect(
+            frameWidth = 720f,
+            frameHeight = 1280f,
+            contentAspect = 720f / 1280f,
+            corner = PipCorner.TOP_START,
+            widthFraction = 0.25f,
+            marginFraction = 0.04f,
+            leftFraction = 0.5f,
+            topFraction = 0.4f,
+        )
+        assertEquals(360f, rect.left, 0.5f)
+        assertEquals(512f, rect.top, 0.5f)
+        val shoved = pipRect(
+            frameWidth = 720f,
+            frameHeight = 1280f,
+            contentAspect = 720f / 1280f,
+            corner = PipCorner.TOP_START,
+            widthFraction = 0.25f,
+            marginFraction = 0.04f,
+            leftFraction = 0.99f,
+            topFraction = 0.99f,
+        )
+        assertEquals(511.2f, shoved.left, 0.5f)
+        assertEquals(931.2f, shoved.top, 0.5f)
+    }
+
+    @Test
+    fun visibleBoundsInsetTheCoveredSides() {
+        val frame = coverFrame(1080f, 2400f, 720f / 1280f)
+        val visible = visibleFrameBounds(frame, 1080f, 2400f)
+        assertTrue(visible.left > 0f)
+        assertEquals(0f, visible.top, 0.5f)
+        assertEquals(1080f, visible.width, 0.5f)
+        assertEquals(2400f, visible.height, 0.5f)
+    }
+
+    @Test
     fun radiusUsesTheShortSide() {
         val rect = PixelRect(0f, 0f, 180f, 320f)
         assertEquals(0f, pipCornerRadiusPx(rect, 0f), 0.01f)
