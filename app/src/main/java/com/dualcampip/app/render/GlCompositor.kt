@@ -120,7 +120,16 @@ class GlCompositor {
     }
 
     fun updatePipSlot(slot: CameraSlot) {
-        pipSlot = slot
+        // The swap and the re-anchor have to land in the same task: an already queued
+        // render must draw either the old camera with the old origin or the new camera
+        // with the new one, never a mix. Both fields are only touched on the GL thread.
+        // The encoder timeline is driven by whichever camera is fullscreen, and the camera
+        // taking over has its own sensor clock, so the next frame continues the output
+        // timeline instead of jumping back to zero.
+        post {
+            pipSlot = slot
+            encoderPts.reanchor()
+        }
         schedule()
     }
 

@@ -43,7 +43,7 @@
     <string name="corner_bottom_end">右下</string>
     <string name="pip_size_value">大小 · 宽度 %1$d%%</string>
     <string name="pip_radius_value">圆角 · %1$d%%</string>
-    <string name="pip_locked">录制中不能调整画中画的位置、大小和显示</string>
+    <string name="pip_locked">录制中不能调位置和大小，但可以直接单击小窗换镜头、双击收起</string>
     <string name="privacy_note">视频只保存在本机相册，不会上传。</string>
     <string name="support_note">优先适配 Pixel、三星和部分小米旗舰。很多机型不能同时打开前后摄，这时录制会停用而不是假装成功。</string>
     <string name="frame_label">成片范围</string>

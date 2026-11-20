@@ -245,7 +245,8 @@ private fun CameraPane(
     onTogglePipVisible: () -> Unit,
 ) {
     val probing = state.phase == Phase.Probing || state.permission == PermissionState.Unknown
-    val layoutLocked = state.recording is RecordingUi.Active || state.recording is RecordingUi.Saving
+    // Geometry stays frozen while recording; swapping or hiding is still allowed.
+    val geometryLocked = state.recording is RecordingUi.Active || state.recording is RecordingUi.Saving
     var viewSize by remember { mutableStateOf(IntSize.Zero) }
     Box(
         modifier = Modifier
@@ -277,7 +278,8 @@ private fun CameraPane(
                 pipSlot = state.pipSlot,
                 pipAspect = state.pipAspect,
                 visible = state.pipVisible,
-                interactive = state.dualActive && !layoutLocked,
+                dualActive = state.dualActive,
+                recording = geometryLocked,
                 viewWidth = viewSize.width.toFloat(),
                 viewHeight = viewSize.height.toFloat(),
                 onMove = onMovePip,
@@ -300,9 +302,13 @@ private fun CameraPane(
 /**
  * Touch layer over the small window.
  *
- * - drag moves it (the same placement is used by the encoder)
+ * - drag moves it (the same placement is used by the encoder), only outside a recording
  * - one tap swaps which camera sits in the small window
  * - double tap hides or shows it
+ *
+ * Swapping and hiding stay available while recording: the compositor re-anchors the
+ * encoder timeline on the new camera, so the file just has a cut there. Dragging stays
+ * locked because the placement has to match what the user framed before pressing record.
  *
  * While hidden the window is not drawn, so a dashed placeholder marks where it was and
  * only the double tap stays available there.
@@ -313,7 +319,8 @@ private fun PipOverlay(
     pipSlot: CameraSlot,
     pipAspect: Float,
     visible: Boolean,
-    interactive: Boolean,
+    dualActive: Boolean,
+    recording: Boolean,
     viewWidth: Float,
     viewHeight: Float,
     onMove: (PipConfig) -> Unit,
@@ -321,6 +328,8 @@ private fun PipOverlay(
     onToggleVisible: () -> Unit,
 ) {
     val density = LocalDensity.current
+    val draggable = dualActive && !recording
+    val gesturable = dualActive
     val frame = coverFrame(viewWidth, viewHeight, EncodeConfig.ASPECT_W_OVER_H)
     val local = pipRect(
         frameWidth = frame.width,
@@ -342,7 +351,7 @@ private fun PipOverlay(
     )
     val latestPip = rememberUpdatedState(pip)
     val latestAspect = rememberUpdatedState(pipAspect)
-    val showPlaceholder = !visible && interactive
+    val showPlaceholder = !visible && gesturable && !recording
     val swapAction = stringResource(R.string.pip_action_swap)
     val showAction = stringResource(R.string.pip_action_show)
     Box(
@@ -354,7 +363,7 @@ private fun PipOverlay(
                 contentDescription = description
                 role = Role.Button
                 // Screen readers cannot perform a single or double tap, so expose one action.
-                if (interactive) {
+                if (gesturable) {
                     if (visible) {
                         onClick(label = swapAction) {
                             onSwap()
@@ -368,8 +377,8 @@ private fun PipOverlay(
                     }
                 }
             }
-            .pointerInput(interactive, visible, viewWidth, viewHeight) {
-                if (!interactive || !visible) return@pointerInput
+            .pointerInput(draggable, visible, viewWidth, viewHeight) {
+                if (!draggable || !visible) return@pointerInput
                 var left = 0f
                 var top = 0f
                 var pipWidth = 0f
@@ -412,8 +421,8 @@ private fun PipOverlay(
                     },
                 )
             }
-            .pointerInput(interactive, visible, pipSlot) {
-                if (!interactive) return@pointerInput
+            .pointerInput(gesturable, visible, pipSlot) {
+                if (!gesturable) return@pointerInput
                 detectTapGestures(
                     onTap = { if (visible) onSwap() },
                     onDoubleTap = { onToggleVisible() },

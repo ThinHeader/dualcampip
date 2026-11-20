@@ -202,11 +202,13 @@ class DualCamEngine(
 
     /**
      * Moves the other camera into the small window. Only the compositing changes; both
-     * camera streams stay bound, so no camera is reopened or re-paired.
+     * camera streams stay bound, so no camera is reopened or re-paired. Allowed while
+     * recording: the encoder timeline is re-anchored on the new camera's clock, so the
+     * file just has a cut where the swap happened.
      */
     fun swapPipCamera() {
         val snapshot = _state.value
-        if (recordingActive || !snapshot.dualActive) return
+        if (!snapshot.dualActive) return
         val next = when (snapshot.pipSlot) {
             CameraSlot.FRONT -> CameraSlot.REAR
             CameraSlot.REAR -> CameraSlot.FRONT
@@ -216,9 +218,12 @@ class DualCamEngine(
         _state.update { it.copy(pipSlot = next) }
     }
 
-    /** Hides or shows the small window in the preview and in anything recorded next. */
+    /**
+     * Hides or shows the small window in the preview and in the recording. Hiding only
+     * drops one quad from the composition, so the encoder timeline is untouched.
+     */
     fun setPipVisible(visible: Boolean) {
-        if (recordingActive || _state.value.pipVisible == visible) return
+        if (_state.value.pipVisible == visible) return
         settings.savePipVisible(visible)
         compositor.updatePipVisible(visible)
         _state.update { it.copy(pipVisible = visible) }
