@@ -55,7 +55,13 @@ class DualCamEngine(
     private val sessionGen = AtomicInteger(0)
     private val released = AtomicBoolean(false)
 
-    private val _state = MutableStateFlow(DualCamUiState(pip = settings.load()))
+    private val _state = MutableStateFlow(
+        DualCamUiState(
+            pip = settings.load(),
+            pipSlot = settings.loadPipSlot(),
+            pipVisible = settings.loadPipVisible(),
+        ),
+    )
     val state: StateFlow<DualCamUiState> = _state.asStateFlow()
 
     private var lifecycleOwner: LifecycleOwner? = null
@@ -70,7 +76,10 @@ class DualCamEngine(
     private var provider: ProcessCameraProvider? = null
 
     init {
-        compositor.updatePipLayout(settings.load())
+        val initial = _state.value
+        compositor.updatePipLayout(initial.pip)
+        compositor.updatePipSlot(initial.pipSlot)
+        compositor.updatePipVisible(initial.pipVisible)
         compositor.onBothFrames = {
             scope.launch(Dispatchers.Main) { onBothFrames() }
         }
@@ -190,6 +199,32 @@ class DualCamEngine(
         compositor.updatePipLayout(safe)
         _state.update { it.copy(pip = safe) }
     }
+
+    /**
+     * Moves the other camera into the small window. Only the compositing changes; both
+     * camera streams stay bound, so no camera is reopened or re-paired.
+     */
+    fun swapPipCamera() {
+        val snapshot = _state.value
+        if (recordingActive || !snapshot.dualActive) return
+        val next = when (snapshot.pipSlot) {
+            CameraSlot.FRONT -> CameraSlot.REAR
+            CameraSlot.REAR -> CameraSlot.FRONT
+        }
+        settings.savePipSlot(next)
+        compositor.updatePipSlot(next)
+        _state.update { it.copy(pipSlot = next) }
+    }
+
+    /** Hides or shows the small window in the preview and in anything recorded next. */
+    fun setPipVisible(visible: Boolean) {
+        if (recordingActive || _state.value.pipVisible == visible) return
+        settings.savePipVisible(visible)
+        compositor.updatePipVisible(visible)
+        _state.update { it.copy(pipVisible = visible) }
+    }
+
+    fun togglePipVisibility() = setPipVisible(!_state.value.pipVisible)
 
     fun releaseAsync() {
         if (!released.compareAndSet(false, true)) return
@@ -346,11 +381,13 @@ class DualCamEngine(
 
         override fun onStream(slot: CameraSlot, geometry: StreamGeometry) {
             compositor.updateGeometry(slot, geometry)
-            if (slot == CameraSlot.FRONT) {
-                val aspect = uprightAspect(geometry)
-                _state.update { current ->
-                    if (current.frontAspect == aspect) current else current.copy(frontAspect = aspect)
+            val aspect = uprightAspect(geometry)
+            _state.update { current ->
+                val next = when (slot) {
+                    CameraSlot.FRONT -> current.copy(frontAspect = aspect)
+                    CameraSlot.REAR -> current.copy(rearAspect = aspect)
                 }
+                if (next == current) current else next
             }
         }
 

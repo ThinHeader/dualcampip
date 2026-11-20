@@ -13,6 +13,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +42,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -50,6 +55,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntSize
@@ -63,6 +69,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dualcampip.app.DualCamViewModel
 import com.dualcampip.app.R
 import com.dualcampip.app.encode.EncodeConfig
+import com.dualcampip.app.model.CameraSlot
 import com.dualcampip.app.model.PipConfig
 import com.dualcampip.app.render.clampPipTopLeft
 import com.dualcampip.app.render.coverFrame
@@ -179,6 +186,8 @@ fun DualCamApp(viewModel: DualCamViewModel = viewModel()) {
                 },
                 onOpenSettings = { showSettings = true },
                 onMovePip = viewModel::updatePip,
+                onSwapPip = viewModel::swapPipCamera,
+                onTogglePipVisible = viewModel::togglePipVisibility,
             )
         }
         if (showSettings && state.permission == PermissionState.Granted) {
@@ -232,8 +241,11 @@ private fun CameraPane(
     onRecord: () -> Unit,
     onOpenSettings: () -> Unit,
     onMovePip: (PipConfig) -> Unit,
+    onSwapPip: () -> Unit,
+    onTogglePipVisible: () -> Unit,
 ) {
     val probing = state.phase == Phase.Probing || state.permission == PermissionState.Unknown
+    val layoutLocked = state.recording is RecordingUi.Active || state.recording is RecordingUi.Saving
     var viewSize by remember { mutableStateOf(IntSize.Zero) }
     Box(
         modifier = Modifier
@@ -257,6 +269,22 @@ private fun CameraPane(
                 strokeWidth = 2.dp,
             )
         }
+        // Below the record button on purpose: where the two overlap, the record button wins
+        // the touch, so a PiP parked over the shutter can never block recording.
+        if (state.permission == PermissionState.Granted && viewSize.width > 0 && viewSize.height > 0) {
+            PipOverlay(
+                pip = state.pip,
+                pipSlot = state.pipSlot,
+                pipAspect = state.pipAspect,
+                visible = state.pipVisible,
+                interactive = state.dualActive && !layoutLocked,
+                viewWidth = viewSize.width.toFloat(),
+                viewHeight = viewSize.height.toFloat(),
+                onMove = onMovePip,
+                onSwap = onSwapPip,
+                onToggleVisible = onTogglePipVisible,
+            )
+        }
         RecordButton(
             state = state,
             onRecord = onRecord,
@@ -266,51 +294,82 @@ private fun CameraPane(
                 .navigationBarsPadding()
                 .padding(bottom = 28.dp),
         )
-        if (state.permission == PermissionState.Granted && viewSize.width > 0 && viewSize.height > 0) {
-            PipDragTarget(
-                pip = state.pip,
-                frontAspect = state.frontAspect,
-                viewWidth = viewSize.width.toFloat(),
-                viewHeight = viewSize.height.toFloat(),
-                enabled = state.recording !is RecordingUi.Active && state.recording !is RecordingUi.Saving,
-                onMove = onMovePip,
-            )
-        }
     }
 }
 
+/**
+ * Touch layer over the small window.
+ *
+ * - drag moves it (the same placement is used by the encoder)
+ * - one tap swaps which camera sits in the small window
+ * - double tap hides or shows it
+ *
+ * While hidden the window is not drawn, so a dashed placeholder marks where it was and
+ * only the double tap stays available there.
+ */
 @Composable
-private fun PipDragTarget(
+private fun PipOverlay(
     pip: PipConfig,
-    frontAspect: Float,
+    pipSlot: CameraSlot,
+    pipAspect: Float,
+    visible: Boolean,
+    interactive: Boolean,
     viewWidth: Float,
     viewHeight: Float,
-    enabled: Boolean,
     onMove: (PipConfig) -> Unit,
+    onSwap: () -> Unit,
+    onToggleVisible: () -> Unit,
 ) {
     val density = LocalDensity.current
     val frame = coverFrame(viewWidth, viewHeight, EncodeConfig.ASPECT_W_OVER_H)
     val local = pipRect(
         frameWidth = frame.width,
         frameHeight = frame.height,
-        contentAspect = frontAspect,
+        contentAspect = pipAspect,
         corner = pip.corner,
         widthFraction = pip.widthFraction,
         leftFraction = pip.leftFraction,
         topFraction = pip.topFraction,
     )
-    val visible = visibleFrameBounds(frame, viewWidth, viewHeight)
+    val bounds = visibleFrameBounds(frame, viewWidth, viewHeight)
     val margin = PipConfig.MARGIN_FRACTION * frame.width
-    val description = stringResource(R.string.pip_drag_cd)
+    val description = stringResource(
+        when {
+            !visible -> R.string.pip_cd_hidden
+            pipSlot == CameraSlot.REAR -> R.string.pip_cd_rear
+            else -> R.string.pip_cd_front
+        },
+    )
     val latestPip = rememberUpdatedState(pip)
-    val latestAspect = rememberUpdatedState(frontAspect)
+    val latestAspect = rememberUpdatedState(pipAspect)
+    val showPlaceholder = !visible && interactive
+    val swapAction = stringResource(R.string.pip_action_swap)
+    val showAction = stringResource(R.string.pip_action_show)
     Box(
         modifier = Modifier
             .offsetPx(local.left + frame.left, local.top + frame.top, density)
             .sizePx(local.width, local.height, density)
-            .semantics { contentDescription = description }
-            .pointerInput(enabled, viewWidth, viewHeight) {
-                if (!enabled) return@pointerInput
+            .then(if (showPlaceholder) Modifier.pipPlaceholder(pip.radiusFraction) else Modifier)
+            .semantics {
+                contentDescription = description
+                role = Role.Button
+                // Screen readers cannot perform a single or double tap, so expose one action.
+                if (interactive) {
+                    if (visible) {
+                        onClick(label = swapAction) {
+                            onSwap()
+                            true
+                        }
+                    } else {
+                        onClick(label = showAction) {
+                            onToggleVisible()
+                            true
+                        }
+                    }
+                }
+            }
+            .pointerInput(interactive, visible, viewWidth, viewHeight) {
+                if (!interactive || !visible) return@pointerInput
                 var left = 0f
                 var top = 0f
                 var pipWidth = 0f
@@ -339,7 +398,7 @@ private fun PipDragTarget(
                             top = top + drag.y,
                             pipWidth = pipWidth,
                             pipHeight = pipHeight,
-                            bounds = visible,
+                            bounds = bounds,
                             margin = margin,
                         )
                         left = clampedLeft
@@ -352,7 +411,44 @@ private fun PipDragTarget(
                         )
                     },
                 )
+            }
+            .pointerInput(interactive, visible, pipSlot) {
+                if (!interactive) return@pointerInput
+                detectTapGestures(
+                    onTap = { if (visible) onSwap() },
+                    onDoubleTap = { onToggleVisible() },
+                )
             },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (showPlaceholder) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Ink.copy(alpha = 0.55f))
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.pip_hidden_label),
+                    color = Paper,
+                    style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
+    }
+}
+
+/** Dashed outline left behind where a hidden PiP sits, so the double tap can be found again. */
+private fun Modifier.pipPlaceholder(radiusFraction: Float): Modifier = drawBehind {
+    val radius = size.minDimension / 2f * radiusFraction.coerceIn(0f, 1f)
+    val stroke = Stroke(
+        width = 1.dp.toPx(),
+        pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx())),
+    )
+    drawRoundRect(
+        color = Line,
+        cornerRadius = CornerRadius(radius),
+        style = stroke,
     )
 }
 

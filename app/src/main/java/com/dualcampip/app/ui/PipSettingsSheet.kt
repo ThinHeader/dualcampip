@@ -84,6 +84,10 @@ fun PipSettingsSheet(
                 enabled = !locked,
             )
             Text(
+                text = stringResource(R.string.pip_gesture_hint),
+                color = Muted,
+            )
+            Text(
                 text = if (locked) stringResource(R.string.pip_locked) else stringResource(R.string.privacy_note),
                 color = Muted,
             )

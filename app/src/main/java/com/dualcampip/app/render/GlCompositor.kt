@@ -21,8 +21,12 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 
 /**
- * Draws the rear camera full-frame and the front camera as a rounded PiP into the
- * preview surface and, while recording, into the encoder surface with the same layout.
+ * Draws one camera full-frame and the other as a rounded PiP into the preview
+ * surface and, while recording, into the encoder surface with the same layout.
+ *
+ * Which camera goes where is a purely compositor-side decision: the camera session
+ * always feeds rear into [rear] and front into [front], so swapping the PiP camera
+ * never re-opens a camera.
  */
 class GlCompositor {
     private val thread = HandlerThread("DualCamGL").apply { start() }
@@ -53,6 +57,8 @@ class GlCompositor {
         .asFloatBuffer()
 
     @Volatile var pip: PipConfig = PipConfig.Default
+    @Volatile var pipSlot: CameraSlot = CameraSlot.FRONT
+    @Volatile var pipVisible: Boolean = true
     @Volatile var recording: Boolean = false
     @Volatile var onBothFrames: (() -> Unit)? = null
 
@@ -110,6 +116,16 @@ class GlCompositor {
 
     fun updatePipLayout(config: PipConfig) {
         pip = config.sanitized()
+        schedule()
+    }
+
+    fun updatePipSlot(slot: CameraSlot) {
+        pipSlot = slot
+        schedule()
+    }
+
+    fun updatePipVisible(visible: Boolean) {
+        pipVisible = visible
         schedule()
     }
 
@@ -212,8 +228,9 @@ class GlCompositor {
             egl.swap(preview)
         }
         val encoder = encoderEgl
-        if (recording && encoder != null && rear.hasFrame) {
-            val pts = encoderPts.take(rear.texture.timestamp, System.nanoTime())
+        val driver = fullscreenStream()
+        if (recording && encoder != null && driver.hasFrame) {
+            val pts = encoderPts.take(driver.texture.timestamp, System.nanoTime())
             if (pts != null) {
                 egl.makeCurrent(encoder)
                 drawScene(EncodeConfig.WIDTH, EncodeConfig.HEIGHT)
@@ -222,6 +239,13 @@ class GlCompositor {
             }
         }
     }
+
+    /** Camera filling the screen. The other one is the PiP when it is visible. */
+    private fun fullscreenStream(): CameraStream =
+        if (pipSlot == CameraSlot.REAR) front else rear
+
+    private fun pipStream(): CameraStream =
+        if (pipSlot == CameraSlot.REAR) rear else front
 
     private fun drawScene(width: Int, height: Int) {
         GLES20.glViewport(0, 0, width, height)
@@ -237,12 +261,21 @@ class GlCompositor {
             viewHeight = height.toFloat(),
             contentAspect = EncodeConfig.ASPECT_W_OVER_H,
         )
-        if (rear.hasFrame) {
-            GLES20.glDisable(GLES20.GL_BLEND)
-            drawStream(rear, frame, width, height, mask = false, radiusPx = 0f)
+        val wantedFull = fullscreenStream()
+        val wantedPip = pipStream()
+        // While one stream is still warming up, keep the other one fullscreen instead of
+        // showing black. It is the same camera that would otherwise be the PiP.
+        val fullscreen = if (wantedFull.hasFrame) {
+            wantedFull
+        } else {
+            wantedPip.takeIf { it.hasFrame }
         }
-        if (front.hasFrame) {
-            val aspect = uprightAspect(front.geometry)
+        if (fullscreen != null) {
+            GLES20.glDisable(GLES20.GL_BLEND)
+            drawStream(fullscreen, frame, width, height, mask = false, radiusPx = 0f)
+        }
+        if (pipVisible && wantedPip.hasFrame && wantedPip !== fullscreen) {
+            val aspect = uprightAspect(wantedPip.geometry)
             val pipRect = pipRect(
                 frameWidth = frame.width,
                 frameHeight = frame.height,
@@ -255,7 +288,7 @@ class GlCompositor {
             val radius = pipCornerRadiusPx(pipRect, pip.radiusFraction)
             GLES20.glEnable(GLES20.GL_BLEND)
             GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
-            drawStream(front, pipRect, width, height, mask = radius > 0.5f, radiusPx = radius)
+            drawStream(wantedPip, pipRect, width, height, mask = radius > 0.5f, radiusPx = radius)
             GLES20.glDisable(GLES20.GL_BLEND)
         }
     }

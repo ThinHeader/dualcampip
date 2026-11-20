@@ -1,6 +1,7 @@
 package com.dualcampip.app.settings
 
 import android.content.Context
+import com.dualcampip.app.model.CameraSlot
 import com.dualcampip.app.model.PipConfig
 import com.dualcampip.app.model.PipCorner
 
@@ -35,6 +36,20 @@ class PipSettingsStore(context: Context) {
         editor.apply()
     }
 
+    fun loadPipSlot(): CameraSlot = prefs.getString(KEY_SLOT, null)
+        ?.let { name -> runCatching { CameraSlot.valueOf(name) }.getOrNull() }
+        ?: CameraSlot.FRONT
+
+    fun savePipSlot(slot: CameraSlot) {
+        prefs.edit().putString(KEY_SLOT, slot.name).apply()
+    }
+
+    fun loadPipVisible(): Boolean = prefs.getBoolean(KEY_VISIBLE, true)
+
+    fun savePipVisible(visible: Boolean) {
+        prefs.edit().putBoolean(KEY_VISIBLE, visible).apply()
+    }
+
     private companion object {
         const val PREFS = "pip_settings"
         const val KEY_CORNER = "corner"
@@ -42,5 +57,7 @@ class PipSettingsStore(context: Context) {
         const val KEY_RADIUS = "radius"
         const val KEY_LEFT = "left"
         const val KEY_TOP = "top"
+        const val KEY_SLOT = "pip_slot"
+        const val KEY_VISIBLE = "pip_visible"
     }
 }

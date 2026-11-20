@@ -29,7 +29,13 @@
     <string name="gallery_failed">无法写入系统相册。</string>
     <string name="generic_error">出错了，请重试。</string>
     <string name="settings">画中画</string>
-    <string name="pip_drag_cd">拖动前置画面</string>
+    <string name="pip_cd_front">画中画：前置镜头。单击切换前后摄，双击隐藏，可拖动</string>
+    <string name="pip_cd_rear">画中画：后置镜头。单击切换前后摄，双击隐藏，可拖动</string>
+    <string name="pip_cd_hidden">画中画已隐藏，双击可重新显示</string>
+    <string name="pip_hidden_label">画中画</string>
+    <string name="pip_action_swap">切换前后摄</string>
+    <string name="pip_action_show">显示画中画</string>
+    <string name="pip_gesture_hint">单击小窗可换前置或后置进画中画，双击隐藏或显示。</string>
     <string name="pip_corner">位置</string>
     <string name="corner_top_start">左上</string>
     <string name="corner_top_end">右上</string>
@@ -37,7 +43,7 @@
     <string name="corner_bottom_end">右下</string>
     <string name="pip_size_value">大小 · 宽度 %1$d%%</string>
     <string name="pip_radius_value">圆角 · %1$d%%</string>
-    <string name="pip_locked">录制中不能改画中画位置和大小</string>
+    <string name="pip_locked">录制中不能调整画中画的位置、大小和显示</string>
     <string name="privacy_note">视频只保存在本机相册，不会上传。</string>
     <string name="support_note">优先适配 Pixel、三星和部分小米旗舰。很多机型不能同时打开前后摄，这时录制会停用而不是假装成功。</string>
     <string name="frame_label">成片范围</string>

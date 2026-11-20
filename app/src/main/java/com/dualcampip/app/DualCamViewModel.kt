@@ -34,6 +34,10 @@ class DualCamViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updatePip(config: PipConfig) = engine.updatePip(config)
 
+    fun swapPipCamera() = engine.swapPipCamera()
+
+    fun togglePipVisibility() = engine.togglePipVisibility()
+
     override fun onCleared() {
         engine.releaseAsync()
     }
